@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Delimitación del área de estudio y ubicación de terrenos</title>
+    <!-- Leaflet CSS y JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            height: 100%;
+            width: 100%;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+            background: #eaeef2;
+        }
+        /* Leyenda personalizada (superior derecha) */
+        .custom-legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px 16px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 14px;
+            z-index: 1000;
+            border: 1px solid #ccc;
+            backdrop-filter: blur(2px);
+        }
+        .custom-legend div {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .custom-legend div:last-child {
+            margin-bottom: 0;
+        }
+        .legend-dash {
+            display: inline-block;
+            width: 30px;
+            height: 3px;
+            border-top: 3px dashed darkblue;
+        }
+        .legend-emoji {
+            font-size: 20px;
+            width: 30px;
+            text-align: center;
+        }
+        /* Tooltip permanente (etiquetas de los puntos) */
+        .permanent-label {
+            background: white;
+            border: 1px solid #222;
+            border-radius: 4px;
+            padding: 2px 8px;
+            font-size: 12px;
+            font-weight: bold;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            white-space: nowrap;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            pointer-events: none;
+        }
+        /* Icono personalizado para el punto de referencia */
+        .ref-icon {
+            background: none;
+            border: none;
+            font-size: 34px;
+            line-height: 1;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="custom-legend">
+        <div>
+            <span class="legend-dash"></span>
+            <span>Radio de estudio (10 km)</span>
+        </div>
+        <div>
+            <span class="legend-emoji">📍</span>
+            <span>Punto de referencia</span>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // Función para inicializar el mapa cuando el DOM esté listo
+            function iniciarMapa() {
+                try {
+                    // Coordenadas del punto de referencia (origen)
+                    const latOrigen = 8.963991666666667;   // 8°57'50.37"N
+                    const lngOrigen = -83.45923611111111;  // 83°27'33.25"O
+
+                    // Lista de puntos con coordenadas y texto original
+                    const puntos = [
+                        { nombre: "T-1 Palmar Norte", lat: 8.963758333333333, lng: -83.449725,   raw: "8°57'49.53\"N, 83°26'59.01\"O" },
+                        { nombre: "T-2 La Palma",     lat: 8.929044444444445, lng: -83.44015555555556, raw: "8°55'44.56\"N, 83°26'24.56\"O" },
+                        { nombre: "T-3 Olla Cero",    lat: 8.92325,           lng: -83.41155555555556, raw: "8°55'23.70\"N, 83°24'41.60\"O" },
+                        { nombre: "T4-Jalaca",        lat: 8.877894444444445, lng: -83.35796111111111, raw: "8°52'40.42\"N, 83°21'28.66\"O" },
+                        { nombre: "T-5 Batambal",     lat: 8.967158333333334, lng: -83.47602777777778, raw: "8°58'1.77\"N, 83°28'33.70\"O" }
+                    ];
+
+                    // Crear el mapa y centrarlo inicialmente en el origen
+                    const mapa = L.map('map').setView([latOrigen, lngOrigen], 12);
+
+                    // Añadir capa de mosaicos de OpenStreetMap
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> colaboradores',
+                        maxZoom: 19
+                    }).addTo(mapa);
+
+                    // 1. Círculo de 10 km (punteado, azul oscuro, sin relleno)
+                    const circulo = L.circle([latOrigen, lngOrigen], {
+                        radius: 10000,          // 10 km en metros
+                        color: 'darkblue',
+                        weight: 3,
+                        dashArray: '8, 8',
+                        fill: false,
+                        opacity: 0.9
+                    }).addTo(mapa);
+
+                    // 2. Punto de referencia con emoji 📍 (sin etiqueta permanente)
+                    const iconoReferencia = L.divIcon({
+                        html: '📍',
+                        iconSize: [34, 34],
+                        className: 'ref-icon',
+                        popupAnchor: [0, -18]
+                    });
+                    const marcadorRef = L.marker([latOrigen, lngOrigen], { icon: iconoReferencia }).addTo(mapa);
+                    marcadorRef.bindPopup('<b>Punto de referencia</b><br>8°57\'50.37"N, 83°27\'33.25"O');
+
+                    // 3. Puntos adicionales: marcador rojo estándar + etiqueta permanente con offset personalizado
+                    // Offsets para evitar traslapes (x, y) en píxeles
+                    const offsets = [
+                        [0, -10],   // T-1 (hacia abajo, porque está muy cerca del origen)
+                        [-15, -10],  // T-2
+                        [-15, -10],  // T-3
+                        [-15, -10], // T4-Jalaca (ligeramente a la derecha)
+                        [-30, -10]   // T-5
+                    ];
+
+                    puntos.forEach((punto, indice) => {
+                        const marcador = L.marker([punto.lat, punto.lng]).addTo(mapa);
+                        // Popup al hacer clic (muestra coordenadas y enlace)
+                        marcador.bindPopup(`
+                            <b>${punto.nombre}</b><br>
+                            📐 ${punto.raw}<br>
+                            🌐 <a href="https://www.openstreetmap.org/?mlat=${punto.lat}&mlon=${punto.lng}&zoom=18" target="_blank">Ver en OSM</a>
+                        `);
+                        // Etiqueta permanente (siempre visible)
+                        marcador.bindTooltip(punto.nombre, {
+                            permanent: true,
+                            direction: 'top',
+                            offset: offsets[indice],
+                            className: 'permanent-label'
+                        });
+                    });
+
+                    // Ajustar la vista para que se vean todos los elementos (círculo + todos los marcadores)
+                    const grupo = L.featureGroup();
+                    puntos.forEach(p => grupo.addLayer(L.marker([p.lat, p.lng])));
+                    grupo.addLayer(circulo);
+                    grupo.addLayer(marcadorRef);
+                    
+                    const limites = grupo.getBounds();
+                    mapa.fitBounds(limites, { padding: [50, 50] });
+
+                    console.log("Mapa inicializado correctamente con círculo de 10 km y 5 puntos etiquetados.");
+                } catch (error) {
+                    console.error("Error al cargar el mapa:", error);
+                }
+            }
+
+            // Esperar a que el DOM esté completamente cargado
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', iniciarMapa);
+            } else {
+                iniciarMapa();
+            }
+        })();
+    </script>
+</body>
+</html>
